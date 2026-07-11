@@ -5,8 +5,12 @@
 #include <stdint.h>
 #include <linux/kvm.h>
 
-#define GUEST_START_ADDR 0x8000
-#define GUEST_CODE_PAGES 16
+#include <pthread.h>
+
+#define GUEST_STACK_ADDR_PS_2MB 0xFFFFFF
+
+#define GUEST_START_ADDR_PS_2MB 0x200000
+#define GUEST_START_ADDR_PS_4KB 0x8000
 
 #define IRQ_NUM   32
 #define IRQ_COUNT 3
@@ -22,19 +26,29 @@
 #define EFER_LME (1u << 8)
 #define EFER_LMA (1u << 10)
 
+// is log2(MEM_SIZE)
+#define PHYS_MEM_SIZE_2MB 1 << 21
+#define PHYS_MEM_SIZE_4MB 1 << 22
+#define PHYS_MEM_SIZE_8MB 1 << 23
+
+// is log2(PAGE_SIZE)
+#define PAGE_SIZE_4KB 1 << 12
+#define PAGE_SIZE_2MB 1 << 21
+
 struct vm {
 	int kvm_fd;
 	int vm_fd;
 	int vcpu_fd;
 	char *mem;
 	size_t mem_size;
+    size_t page_size;
 	struct kvm_run *run;
 	int run_mmap_size;
 };
 
 int  vm_init(struct vm *v, size_t mem_size);
 void vm_destroy(struct vm *v);
-void setup_long_mode(struct vm *v, struct kvm_sregs *sregs);
+void setup_long_mode(struct vm *v, struct kvm_sregs *sregs, int page_size);
 int  load_guest_image(struct vm *v, const char *image_path, uint64_t load_addr);
 int  inject_irq(struct vm *v, unsigned int vector);
 

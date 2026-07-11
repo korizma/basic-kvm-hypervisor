@@ -13,19 +13,11 @@ int  vm_init(struct vm *v, size_t mem_size)
 	struct kvm_userspace_memory_region region;
 
 	memset(v, 0, sizeof(*v));
-	v->kvm_fd = v->vm_fd = v->vcpu_fd = -1;
+	v->vm_fd = v->vcpu_fd = -1;
 	v->mem = MAP_FAILED;
 	v->run = MAP_FAILED;
 	v->run_mmap_size = 0;
 	v->mem_size = mem_size;
-
-	v->kvm_fd = open("/dev/kvm", O_RDWR);
-
-	if (v->kvm_fd < 0) 
-    {
-		perror("open /dev/kvm");
-		return -1;
-	}
 
 	int api = ioctl(v->kvm_fd, KVM_GET_API_VERSION, 0);
 
@@ -72,14 +64,17 @@ int  vm_init(struct vm *v, size_t mem_size)
 	}
 
 	v->run_mmap_size = ioctl(v->kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0);
-	if (v->run_mmap_size <= 0) {
+
+	if (v->run_mmap_size <= 0) 
+    {
 		perror("KVM_GET_VCPU_MMAP_SIZE");
 		return -1;
 	}
 
-	v->run = mmap(NULL, v->run_mmap_size, PROT_READ | PROT_WRITE,
-		      MAP_SHARED, v->vcpu_fd, 0);
-	if (v->run == MAP_FAILED) {
+	v->run = mmap(NULL, v->run_mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED, v->vcpu_fd, 0);
+
+	if (v->run == MAP_FAILED) 
+    {
 		perror("mmap kvm_run");
 		return -1;
 	}
@@ -118,48 +113,80 @@ void vm_destroy(struct vm *v)
 static void setup_segments_64(struct kvm_sregs *sregs)
 {
 	struct kvm_segment code = {
-		.base    = 0,
-		.limit   = 0xffffffff,
-		.present = 1,
-		.type    = 11,
-		.dpl     = 0,
-		.db      = 0,
-		.s       = 1,
-		.l       = 1,
-		.g       = 1,
+		.base    = 0,           // za segmente CS, DS, ES, SS u long modu base nije bitan, FS i GS vaze ali oni su extra segmenti
+		.limit   = 0xffffffff,  // 
+		.present = 1,           // bit for present/not present
+		.type    = 0b1011,      // za s = 1, bit 0 - accesed, bit 1 readable/writable data, bit 2 conforming code, bit 3 executable 
+		.dpl     = 0,           // descriptor privilege level, 0 - kernel segment, 3 - user segment
+		.db      = 0,           // db = 0 for long mode, needs l = 1
+		.s       = 1,           // s = 1 <=> system segment, s = 0 <=> code or data segment
+		.l       = 1,           // l = 1, long mode, l = 0 32 or 16 mode
+		.g       = 1,           // segment granuality, not really useful
 	};
 	struct kvm_segment data = code;
-	data.type = 3;
+	data.type = 0b0011;
 	data.l    = 0;
 
 	sregs->cs = code;
 	sregs->ds = sregs->es = sregs->fs = sregs->gs = sregs->ss = data;
 }
 
-void setup_long_mode(struct vm *v, struct kvm_sregs *sregs)
+void setup_long_mode(struct vm *v, struct kvm_sregs *sregs, int page_size)
 {
-	uint64_t pml4_addr = 0x1000;
-	uint64_t *pml4 = (void *)(v->mem + pml4_addr);
+    // each table is 2^9 entries, 512 entires, 1 entry is 8B, so 512 * 8B = 4KB = 2^12 B
+	uint64_t layer0_addr = 0x1000, layer1_addr = 0x2000, layer2_addr = 0x3000;
+    uint64_t *layer0, *layer1, *layer2;
 
-	uint64_t pdpt_addr = 0x2000;
-	uint64_t *pdpt = (void *)(v->mem + pdpt_addr);
+    layer0 = (void*)(v->mem + layer0_addr);
+    layer1 = (void*)(v->mem + layer1_addr);
+    layer2 = (void*)(v->mem + layer2_addr);
 
-	uint64_t pd_addr = 0x3000;
-	uint64_t *pd = (void *)(v->mem + pd_addr);
+    /*
+        
+    */
 
-	uint64_t pt_addr = 0x4000;
-	uint64_t *pt = (void *)(v->mem + pt_addr);
+    if (page_size == PAGE_SIZE_2MB)
+    {
+        layer0[0] = PDE64_PRESENT | PDE64_RW | layer1_addr;
+        layer1[0] = PDE64_PRESENT | PDE64_RW | layer2_addr;
 
-	pml4[0] = PDE64_PRESENT | PDE64_RW | PDE64_USER | pdpt_addr;
-	pdpt[0] = PDE64_PRESENT | PDE64_RW | PDE64_USER | pd_addr;
-	pd[0]   = PDE64_PRESENT | PDE64_RW | PDE64_USER | pt_addr;
+        int page_number = v->mem_size / page_size;
+        unsigned long start_addr = GUEST_START_ADDR_PS_2MB;
 
-	for (int i = 0; i < GUEST_CODE_PAGES; i++)
-		pt[i] = (GUEST_START_ADDR + i * 0x1000) | PDE64_PRESENT | PDE64_RW | PDE64_USER;
+        // setup pages begining from the guest program address
+        for (int i = 0; i < page_number; i++)
+        {
+            layer2[i] = PDE64_PRESENT | PDE64_RW | PDE64_PS | start_addr + i * page_size;
+        }
+    }
+    else if (page_size == PAGE_SIZE_4KB)
+    {
+        uint64_t layer3_addrs[4] = {0x4000, 0x5000, 0x6000, 0x7000};
+        uint64_t *layer3[4];
 
-	pt[511] = 0x6000 | PDE64_PRESENT | PDE64_RW | PDE64_USER;
+        layer0[0] = PDE64_PRESENT | PDE64_RW | layer1_addr;
+        layer1[0] = PDE64_PRESENT | PDE64_RW | layer2_addr;
 
-	sregs->cr3  = pml4_addr;
+        int page_number = v->mem_size / page_size;
+        int l2_entries_number = page_number / 512;
+        uint64_t start_addr = GUEST_START_ADDR_PS_4KB;
+
+        for (int i = 0; i < l2_entries_number; i++)
+        {
+            layer3[i] = (void*)(v->mem + layer3_addrs[i]);
+            layer2[i] = PDE64_PRESENT | PDE64_RW | layer3_addrs[i];
+        }
+
+        for (int i = 0; i < l2_entries_number; i++)
+        {
+            for (int j = 0; j < 512; j++)
+            {
+                layer3[i][j] = PDE64_PRESENT | PDE64_RW | PDE64_PS | start_addr + (i*512 + j) * page_size;
+            }
+        }
+    }
+
+	sregs->cr3  = layer0_addr;
 	sregs->cr4  = CR4_PAE;
 	sregs->cr0  = CR0_PE | CR0_PG;
 	sregs->efer = EFER_LME | EFER_LMA;
