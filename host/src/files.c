@@ -37,7 +37,7 @@ void advance_state_file_operation(struct file_operation* op, uint32_t next)
             else
             {
                 op->buffer = (char*)malloc(op->buffer_size * sizeof(char));
-                op->buffer_can_be_freed = op->function_type == FUNC_OPEN;
+                op->buffer_can_be_freed = true;
                 op->read_state = READ_STATE_BUFFER;
             }
             break;
@@ -91,6 +91,11 @@ void advance_state_file_operation(struct file_operation* op, uint32_t next)
             op->read_state = READ_STATE_FLAG;
             break;
 
+        case READ_STATE_FLAG:
+            op->flags = next;
+            op->read_state = READ_STATE_FINISH;
+            break;
+
         case READ_STATE_FINISH:
             op->read_state = READ_STATE_INVALID;
             break;
@@ -106,7 +111,7 @@ void advance_state_file_operation(struct file_operation* op, uint32_t next)
     }
 }
 
-char* file_to_char_array(const char* filename, uint32_t* size)
+char* file_to_char_array(const char* filename, uint64_t* size)
 {
     FILE *file = fopen(filename, "rb");
     if (!file)
@@ -144,7 +149,7 @@ int insert_file_content_to_base(struct file_base* base, struct file_content *con
 {
     base->file_num++;
 
-    struct file_operation** temp = realloc(base->files, base->file_num * sizeof(struct file_operation*));
+    struct file_content** temp = realloc(base->files, base->file_num * sizeof(struct file_content*));
 
     if (temp == NULL)
     {
@@ -235,11 +240,13 @@ int open_file(struct file_base* file_base, const char* path, uint8_t flags)
     {
         curr_file = (struct file_content*)malloc(sizeof(struct file_content));
         curr_file->path = strdup(path);
-        curr_file->content = file_to_char_array(path, &curr_file->content_size);
+        curr_file->content = (char*)malloc(sizeof(char));
+        curr_file->content_size = 0;
         curr_file->opened = false;
         curr_file->can_write = true;
         if (curr_file->content == NULL)
         {
+            free(curr_file->path);
             free(curr_file);
             return -1;
         }
@@ -338,10 +345,13 @@ int write_file(struct file_base* file_base, int fd, const char* buffer, size_t s
 
 int file_lseek(struct file_base* file_base, int fd, int64_t offset, uint8_t off_flag)
 {
-    bool seek_set = (off_flag | SEEK_SET) != 0;
-    bool seek_end = (off_flag | SEEK_END) != 0;
+    bool seek_set = (off_flag & 1) != 0;
+    bool seek_end = (off_flag & 2) != 0;
 
-    if (seek_end && seek_set)
+    if (seek_end == seek_set)
+        return -1;
+
+    if (fd < 0 || fd >= file_base->file_num)
         return -1;
 
     if (!file_base->files[fd]->opened)
@@ -354,7 +364,7 @@ int file_lseek(struct file_base* file_base, int fd, int64_t offset, uint8_t off_
     }
     else 
     {
-        if (file_base->files[fd]->content_size - 1 < offset)
+        if (offset < 0 || (uint64_t)offset >= file_base->files[fd]->content_size)
             return -1;
 
         file_base->files[fd]->cursor = offset;
@@ -384,16 +394,14 @@ int execute_file_operation(struct vm* v, struct file_operation* op)
     if (op->read_state != READ_STATE_FINISH)
         return -1;
 
-    if (op->function_type == FUNC_READ || op->function_type == FUNC_WRITE)
+    if (op->function_type == FUNC_READ )
     {
         char* buffer = op->buffer;
         uint64_t buffer_start = (uint64_t)buffer;
         uint64_t buffer_end = buffer_start + op->buffer_size;
 
-        // buffer not in user memory
-        if (buffer_start < GUEST_START_ADDR || buffer_start > v->mem_size || buffer_end > v->mem_size)
+        if (buffer_start < GUEST_START_ADDR || buffer_start >= GUEST_START_ADDR + v->mem_size || buffer_end > GUEST_START_ADDR + v->mem_size)
             return -1;
-
         op->buffer = v->mem + buffer_start;
     }
 

@@ -1,7 +1,7 @@
 #include "descriptors.h"
 #include "interrupts.h"
 #include "io.h"
-#include "test_a.h"
+#include "test_b.h"
 
 static struct gdt_entry gdt[3];
 
@@ -10,7 +10,7 @@ __attribute__((noreturn))
 __attribute__((section(".start")))
 _start(void)
 {
-    test1_a();
+    test1_b();
 
     
 	

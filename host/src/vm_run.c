@@ -91,6 +91,7 @@ int vm_main_thread(struct vm* v)
     int stop = 0;
     int ret;
     struct file_operation op;
+    op.buffer_can_be_freed = false;
 
     clear_file_operation(&op);
 
@@ -122,13 +123,14 @@ int vm_main_thread(struct vm* v)
                 }
                 else if (v->run->io.direction == KVM_EXIT_IO_OUT && v->run->io.port == FILE_PORT) 
                 {
-                    uint32_t data_recieved = *((uint32_t*)v->run + v->run->io.data_offset);
+                    uint32_t data_recieved = *(uint32_t *)((char *)v->run + v->run->io.data_offset);
                     advance_state_file_operation(&op, data_recieved);
                 }
 
                 else if (v->run->io.direction == KVM_EXIT_IO_IN && v->run->io.port == FILE_PORT) 
                 {
                     int ret_val = execute_file_operation(v, &op);
+                    *(int32_t *)((char *)v->run + v->run->io.data_offset) = ret_val;
                     clear_file_operation(&op);
                 }
 			continue;
