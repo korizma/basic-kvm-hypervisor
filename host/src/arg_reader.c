@@ -11,7 +11,7 @@ int find_string_in_array(char* list[], int size, const char* s)
         if (strcmp(list[i], s) == 0)
             return i;
     }
-    return 0;
+    return -1;
 }
 
 char* get_arg_single(char* argv[], int argc, const char* option)
@@ -21,7 +21,7 @@ char* get_arg_single(char* argv[], int argc, const char* option)
     if (i == -1 || i + 1 == argc || i == 0)
         return 0;
 
-    return argv[i];
+    return argv[i+1];
 }
 
 char** get_arg_array(char* argv[], int argc, const char* option, int* size)
@@ -34,7 +34,7 @@ char** get_arg_array(char* argv[], int argc, const char* option, int* size)
     int arg_num = 0;
     for (int j = i+1; j < argc; j++)
     {
-        if (argv[i][0] == '-')
+        if (argv[j][0] == '-')
             break;
 
         arg_num++;
@@ -44,7 +44,7 @@ char** get_arg_array(char* argv[], int argc, const char* option, int* size)
     char** arr = (char**)malloc(arg_num * sizeof(char*));
     for (int j = 0; j < arg_num; j++)
     {
-        arr[j] = argv[i + j]; 
+        arr[j] = argv[i + j + 1]; 
     }
 
     return arr;
@@ -69,7 +69,11 @@ char** get_arg_array_2_options(char* argv[], int argc, const char* option1, cons
     char** opt2 = get_arg_array(argv, argc, option2, size);
 
     if (opt1)
+    {
+        if (opt2)
+            free(opt2);
         return opt1;
+    }
     if (opt2)
         return opt2;
     return 0;
@@ -83,6 +87,12 @@ void parse_args(char* argv[], int argc, unsigned long* page_size, unsigned long*
     char* page_size_string = get_arg_single_2_options(argv, argc, "-p", "--page");
 
     *guests = get_arg_array_2_options(argv, argc, "-g", "--guest", guest_num);
+
+    if (phys_mem_string == 0)
+        phys_mem_string = "a";
+    
+    if (page_size_string == 0)
+        page_size_string = "a";
 
     switch (phys_mem_string[0])
     {

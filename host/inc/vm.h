@@ -7,10 +7,7 @@
 
 #include <pthread.h>
 
-#define GUEST_STACK_ADDR_PS_2MB 0xFFFFFF
-
-#define GUEST_START_ADDR_PS_2MB 0x200000
-#define GUEST_START_ADDR_PS_4KB 0x8000
+#define GUEST_START_ADDR 0x8000
 
 #define IRQ_NUM   32
 #define IRQ_COUNT 3
@@ -44,6 +41,8 @@ struct vm {
     size_t page_size;
 	struct kvm_run *run;
 	int run_mmap_size;
+
+    int thread_id;
 };
 
 int  vm_init(struct vm *v, size_t mem_size);

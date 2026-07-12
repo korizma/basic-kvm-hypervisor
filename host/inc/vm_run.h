@@ -6,8 +6,10 @@
 #include <stdint.h>
 #include "vm.h"
 
-pthread_t* create_vm_thread(int kvm_fd, const char* guest_file, uint64_t memory_size, uint64_t page_size);
+pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, uint64_t memory_size, uint64_t page_size);
 
-void* vm_main_thread(struct vm* vm);
+int vm_main_thread(struct vm* vm);
+
+void print_vm_debug(struct vm *v);
 
 #endif /* VM_RUN_H */

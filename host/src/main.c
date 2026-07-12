@@ -10,20 +10,10 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
 
 int main(int argc, char *argv[])
 {
-	struct vm v;
-	struct kvm_sregs sregs;
-	struct kvm_regs regs;
-	int stop = 0;
-	int ret = 0;
-	int irq_pending = IRQ_COUNT;
-
-    int phys_mem_size = 0;
-    int page_size = 0;
+    uint64_t phys_mem_size = 0, page_size = 0;
 
     char** guests;
     int guest_num;
@@ -60,12 +50,14 @@ int main(int argc, char *argv[])
 
     for (int i = 0; i < guest_num; i++)
     {
-        threads[i] = create_vm_thread(kvm_fd, guests[i], phys_mem_size, page_size);
+        threads[i] = create_vm_thread(i, kvm_fd, guests[i], phys_mem_size, page_size);
     }
 
     for (int i = 0; i < guest_num; i++)
     {
-        pthread_join(threads[i], NULL);
+        if (threads[i] == 0)
+            continue;
+        pthread_join(*threads[i], NULL);
     }
 
 	return 0;

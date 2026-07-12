@@ -12,7 +12,6 @@ int  vm_init(struct vm *v, size_t mem_size)
 {
 	struct kvm_userspace_memory_region region;
 
-	memset(v, 0, sizeof(*v));
 	v->vm_fd = v->vcpu_fd = -1;
 	v->mem = MAP_FAILED;
 	v->run = MAP_FAILED;
@@ -23,7 +22,7 @@ int  vm_init(struct vm *v, size_t mem_size)
 
 	if (api != KVM_API_VERSION) 
     {
-		printf("KVM API mismatch: kernel=%d headers=%d\n", api, KVM_API_VERSION);
+		perror("KVM_API_VERSION");
 		return -1;
 	}
 
@@ -119,7 +118,7 @@ static void setup_segments_64(struct kvm_sregs *sregs)
 		.type    = 0b1011,      // za s = 1, bit 0 - accesed, bit 1 readable/writable data, bit 2 conforming code, bit 3 executable 
 		.dpl     = 0,           // descriptor privilege level, 0 - kernel segment, 3 - user segment
 		.db      = 0,           // db = 0 for long mode, needs l = 1
-		.s       = 1,           // s = 1 <=> system segment, s = 0 <=> code or data segment
+		.s       = 1,           // s = 0 <=> system segment, s = 1 <=> code or data segment
 		.l       = 1,           // l = 1, long mode, l = 0 32 or 16 mode
 		.g       = 1,           // segment granuality, not really useful
 	};
@@ -141,9 +140,6 @@ void setup_long_mode(struct vm *v, struct kvm_sregs *sregs, int page_size)
     layer1 = (void*)(v->mem + layer1_addr);
     layer2 = (void*)(v->mem + layer2_addr);
 
-    /*
-        
-    */
 
     if (page_size == PAGE_SIZE_2MB)
     {
@@ -151,12 +147,11 @@ void setup_long_mode(struct vm *v, struct kvm_sregs *sregs, int page_size)
         layer1[0] = PDE64_PRESENT | PDE64_RW | layer2_addr;
 
         int page_number = v->mem_size / page_size;
-        unsigned long start_addr = GUEST_START_ADDR_PS_2MB;
 
         // setup pages begining from the guest program address
         for (int i = 0; i < page_number; i++)
         {
-            layer2[i] = PDE64_PRESENT | PDE64_RW | PDE64_PS | start_addr + i * page_size;
+            layer2[i] = PDE64_PRESENT | PDE64_RW | PDE64_PS | (i * page_size);
         }
     }
     else if (page_size == PAGE_SIZE_4KB)
@@ -169,7 +164,6 @@ void setup_long_mode(struct vm *v, struct kvm_sregs *sregs, int page_size)
 
         int page_number = v->mem_size / page_size;
         int l2_entries_number = page_number / 512;
-        uint64_t start_addr = GUEST_START_ADDR_PS_4KB;
 
         for (int i = 0; i < l2_entries_number; i++)
         {
@@ -181,7 +175,7 @@ void setup_long_mode(struct vm *v, struct kvm_sregs *sregs, int page_size)
         {
             for (int j = 0; j < 512; j++)
             {
-                layer3[i][j] = PDE64_PRESENT | PDE64_RW | PDE64_PS | start_addr + (i*512 + j) * page_size;
+                layer3[i][j] = PDE64_PRESENT | PDE64_RW | PDE64_PS | ((i*512 + j) * page_size);
             }
         }
     }
