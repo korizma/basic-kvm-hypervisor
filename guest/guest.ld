@@ -1,7 +1,7 @@
 OUTPUT_FORMAT(binary)
 SECTIONS
 {
-        .start : { *(.start) }
+        .start 0x8000: { *(.start) }
         .text : { *(.text*) }
         .rodata : { *(.rodata) }
         .data : { *(.data) }

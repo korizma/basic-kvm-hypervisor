@@ -49,7 +49,7 @@ pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, u
 		return 0;
 	}
 
-    uint64_t guest_start_addr = guest_start_addr;
+    uint64_t guest_start_addr = GUEST_START_ADDR;
         
 	if (load_guest_image(v, guest_file, guest_start_addr) < 0) 
     {
@@ -61,7 +61,7 @@ pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, u
 	memset(&regs, 0, sizeof(regs));
 	regs.rflags = 0x2;
 	regs.rip    = guest_start_addr;
-	regs.rsp    = (guest_start_addr + memory_size - 1) & (uint64_t)(~(0xFF));
+	regs.rsp    = (memory_size - 1) & (uint64_t)(~(0xFF));
 
 	if (ioctl(v->vcpu_fd, KVM_SET_REGS, &regs) < 0) {
 		// perror("KVM_SET_REGS");
@@ -95,12 +95,24 @@ int vm_main_thread(struct vm* v)
 			return 1;
 		}
 
-		switch (v->run->exit_reason) {
-		case KVM_EXIT_IO:
-			if (v->run->io.direction == KVM_EXIT_IO_OUT && v->run->io.port == 0xE9) {
-				char *p = (char *)v->run;
-				printf("Thread %d: %c", v->thread_id, *(p + v->run->io.data_offset));
-			}
+		switch (v->run->exit_reason) 
+        {
+            case KVM_EXIT_IO:
+                if (v->run->io.direction == KVM_EXIT_IO_OUT && v->run->io.port == 0xE9) 
+                {
+                    char *p = (char *)v->run;
+                    // printf("Thread %d: %c\n", v->thread_id, *(p + v->run->io.data_offset));
+                    printf("%c", *(p + v->run->io.data_offset));
+                }
+
+                else if (v->run->io.direction == KVM_EXIT_IO_IN && v->run->io.port == 0xE9) 
+                {
+                    char c_sent = 'W';
+                    char *input = (char*)v->run + v->run->io.data_offset;
+                    *input = c_sent;
+                    // printf("Thread %d: Sent char: %c\n", v->thread_id, c_sent);
+                    printf("\nSent char: %c\n", c_sent);
+                }
 			continue;
 		// case KVM_EXIT_IRQ_WINDOW_OPEN:
 		// 	if (irq_pending > 0) {
