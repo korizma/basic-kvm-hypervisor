@@ -81,12 +81,14 @@ char** get_arg_array_2_options(char* argv[], int argc, const char* option1, cons
 
 
 
-void parse_args(char* argv[], int argc, unsigned long* page_size, unsigned long* memory_size, char*** guests, int* guest_num)
+void parse_args(struct args* args)
 {
-    char* phys_mem_string = get_arg_single_2_options(argv, argc, "-m", "--memory");
-    char* page_size_string = get_arg_single_2_options(argv, argc, "-p", "--page");
+    char* phys_mem_string = get_arg_single_2_options(args->argv, args->argc, "-m", "--memory");
+    char* page_size_string = get_arg_single_2_options(args->argv, args->argc, "-p", "--page");
 
-    *guests = get_arg_array_2_options(argv, argc, "-g", "--guest", guest_num);
+    args->guests = get_arg_array_2_options(args->argv, args->argc, "-g", "--guest", &args->guest_num);
+
+    args->files = get_arg_array_2_options(args->argv, args->argc, "-f", "--file", &args->file_num);
 
     if (phys_mem_string == 0)
         phys_mem_string = "a";
@@ -97,27 +99,27 @@ void parse_args(char* argv[], int argc, unsigned long* page_size, unsigned long*
     switch (phys_mem_string[0])
     {
         case '2':
-            *memory_size = PHYS_MEM_SIZE_2MB;
+            args->memory_size = PHYS_MEM_SIZE_2MB;
             break;
         case '4':
-            *memory_size = PHYS_MEM_SIZE_4MB;
+            args->memory_size = PHYS_MEM_SIZE_4MB;
             break;
         case '8':
-            *memory_size = PHYS_MEM_SIZE_8MB;
+            args->memory_size = PHYS_MEM_SIZE_8MB;
             break;
         default:
-            *memory_size = 0;
+            args->memory_size = 0;
     }
 
     switch (page_size_string[0])
     {
         case '2':
-            *page_size = PAGE_SIZE_2MB;
+            args->page_size = PAGE_SIZE_2MB;
             break;
         case '4':
-            *page_size = PAGE_SIZE_4KB;
+            args->page_size = PAGE_SIZE_4KB;
             break;
         default:
-            *page_size = 0;
+            args->page_size = 0;
     }
 }

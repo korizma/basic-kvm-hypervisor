@@ -5,11 +5,14 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "vm.h"
+#include "files.h"
 
-pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, uint64_t memory_size, uint64_t page_size);
+#define FILE_PORT 0x0278
+
+pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, uint64_t memory_size, uint64_t page_size, struct file_base *base);
 
 int vm_main_thread(struct vm* vm);
 
 void print_vm_debug(struct vm *v);
 
-#endif /* VM_RUN_H */
+#endif 

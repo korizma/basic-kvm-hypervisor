@@ -15,7 +15,7 @@ void *vm_thread_wrapper(void *arg)
     return (void *)(intptr_t)result;
 }
 
-pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, uint64_t memory_size, uint64_t page_size)
+pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, uint64_t memory_size, uint64_t page_size, struct file_base* file_base)
 {
     struct vm* v = (struct vm*)malloc(sizeof(struct vm)); 
 	memset(v, 0, sizeof(*v));
@@ -24,6 +24,8 @@ pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, u
     v->mem_size = memory_size;
     v->page_size = page_size;
     v->thread_id = thread_id;
+
+    create_file_base_using_initial_base(&v->file_base, file_base);
 
 	struct kvm_sregs sregs;
 	struct kvm_regs regs;
@@ -63,7 +65,8 @@ pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, u
 	regs.rip    = guest_start_addr;
 	regs.rsp    = (memory_size - 1) & (uint64_t)(~(0xFF));
 
-	if (ioctl(v->vcpu_fd, KVM_SET_REGS, &regs) < 0) {
+	if (ioctl(v->vcpu_fd, KVM_SET_REGS, &regs) < 0) 
+    {
 		// perror("KVM_SET_REGS");
         fprintf(stderr, "Thread %d: KVM_SET_SREGS: %s\n", thread_id, strerror(errno));
 		vm_destroy(v);
@@ -74,7 +77,8 @@ pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, u
 
     int result = pthread_create(thread, NULL, vm_thread_wrapper, v);
 
-    if (result != 0) {
+    if (result != 0) 
+    {
         fprintf(stderr, "Thread %d: pthread_create failed: %s\n", thread_id, strerror(errno));
         return 0;
     }
@@ -86,6 +90,9 @@ int vm_main_thread(struct vm* v)
 {
     int stop = 0;
     int ret;
+    struct file_operation op;
+
+    clear_file_operation(&op);
 
     while (stop == 0) {
 		ret = ioctl(v->vcpu_fd, KVM_RUN, 0);
@@ -112,6 +119,17 @@ int vm_main_thread(struct vm* v)
                     *input = c_sent;
                     // printf("Thread %d: Sent char: %c\n", v->thread_id, c_sent);
                     printf("\nSent char: %c\n", c_sent);
+                }
+                else if (v->run->io.direction == KVM_EXIT_IO_OUT && v->run->io.port == FILE_PORT) 
+                {
+                    uint32_t data_recieved = *((uint32_t*)v->run + v->run->io.data_offset);
+                    advance_state_file_operation(&op, data_recieved);
+                }
+
+                else if (v->run->io.direction == KVM_EXIT_IO_IN && v->run->io.port == FILE_PORT) 
+                {
+                    int ret_val = execute_file_operation(v, &op);
+                    clear_file_operation(&op);
                 }
 			continue;
 		// case KVM_EXIT_IRQ_WINDOW_OPEN:
