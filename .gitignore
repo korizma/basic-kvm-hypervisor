@@ -1,2 +1,4 @@
 host/build
 guest/build
+guest_a/build
+guest_b/build

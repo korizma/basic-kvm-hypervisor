@@ -10,7 +10,7 @@ __attribute__((noreturn))
 __attribute__((section(".start")))
 _start(void)
 {
-    test1_b();
+    test2_b();
 
     
 	

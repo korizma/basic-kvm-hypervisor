@@ -115,11 +115,11 @@ int vm_main_thread(struct vm* v)
 
                 else if (v->run->io.direction == KVM_EXIT_IO_IN && v->run->io.port == 0xE9) 
                 {
-                    char c_sent = 'W';
+                    char c_sent = 'a' + v->thread_id;
                     char *input = (char*)v->run + v->run->io.data_offset;
                     *input = c_sent;
                     // printf("Thread %d: Sent char: %c\n", v->thread_id, c_sent);
-                    printf("\nSent char: %c\n", c_sent);
+                    // printf("\nSent char: %c\n", c_sent);
                 }
                 else if (v->run->io.direction == KVM_EXIT_IO_OUT && v->run->io.port == FILE_PORT) 
                 {

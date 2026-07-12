@@ -359,7 +359,7 @@ int file_lseek(struct file_base* file_base, int fd, int64_t offset, uint8_t off_
 
     if (seek_end)
     {
-        file_base->files[fd]->cursor = file_base->files[fd]->content_size - 1;
+        file_base->files[fd]->cursor = file_base->files[fd]->content_size;
         return file_base->files[fd]->cursor;
     }
     else 

@@ -47,7 +47,7 @@ static int append_decimal(char *buffer, uint8_t value)
 
 void test1_b(void)
 {
-    static const char path[] = "testb.txt";
+    static const char path[] = "test_files/test2_b.txt";
     static const char expected[] = "Hello from phase B!";
     char received[sizeof(expected) - 1];
     const int message_size = sizeof(expected) - 1;
@@ -79,10 +79,11 @@ void test1_b(void)
 
 void test2_b(void)
 {
-    static const char path[] = "testb2.txt";
+    enum { READ_BUFFER_SIZE = 256 };
+    static const char path[] = "testfiles/testb.txt";
     static const char prefix[] = "Special Number ";
     char contents[sizeof(prefix) - 1 + 3];
-    char received[sizeof(contents)];
+    char received[READ_BUFFER_SIZE];
     int contents_size = sizeof(prefix) - 1;
 
     print("Phase B test 2: waiting for a number\n");
@@ -95,20 +96,31 @@ void test2_b(void)
     int fd = open(path, O_CREATE | O_RDWR);
     if (fd < 0)
         finish_with_error("Phase B test 2: FAIL (open)\n", -1);
+    
+    int original_size = lseek(fd, 0, SEEK_END);
+    if (original_size < 0)
+        finish_with_error("Phase B test 2: FAIL (seek to end)\n", fd);
 
     if (write(fd, contents, contents_size) != contents_size)
         finish_with_error("Phase B test 2: FAIL (write)\n", fd);
 
-    if (lseek(fd, 0, SEEK_SET) != 0)
-        finish_with_error("Phase B test 2: FAIL (lseek)\n", fd);
+    int final_size = lseek(fd, 0, SEEK_END);
+    if (final_size != original_size + contents_size)
+        finish_with_error("Phase B test 2: FAIL (file size)\n", fd);
 
-    if (read(fd, received, contents_size) != contents_size)
+    if (final_size > READ_BUFFER_SIZE)
+        finish_with_error("Phase B test 2: FAIL (file too large)\n", fd);
+
+    if (lseek(fd, 0, SEEK_SET) != 0)
+        finish_with_error("Phase B test 2: FAIL (seek to start)\n", fd);
+
+    if (read(fd, received, final_size) != final_size)
         finish_with_error("Phase B test 2: FAIL (read)\n", fd);
 
     if (close(fd) != 0)
         finish_with_error("Phase B test 2: FAIL (close)\n", -1);
 
-    for (int i = 0; i < contents_size; ++i)
+    for (int i = 0; i < final_size; ++i)
         outb(0xE9, received[i]);
     outb(0xE9, '\n');
 
