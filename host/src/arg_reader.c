@@ -90,6 +90,9 @@ void parse_args(struct args* args)
 
     args->files = get_arg_array_2_options(args->argv, args->argc, "-f", "--file", &args->file_num);
 
+    if (args->files == 0)
+        args->file_num = 0;
+
     if (phys_mem_string == 0)
         phys_mem_string = "a";
     

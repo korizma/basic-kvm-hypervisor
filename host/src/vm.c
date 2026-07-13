@@ -103,10 +103,7 @@ void vm_destroy(struct vm *v)
 		v->vm_fd = -1;
 	}
 
-	if (v->kvm_fd >= 0) {
-		close(v->kvm_fd);
-		v->kvm_fd = -1;
-	}
+    v->kvm_fd = -1;
 }
 
 static void setup_segments_64(struct kvm_sregs *sregs)

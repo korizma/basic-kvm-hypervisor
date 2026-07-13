@@ -165,6 +165,8 @@ int vm_main_thread(struct vm* v)
                     {
                         irq_pending = false;
                         v->buffer->size = data_recieved;
+                        if (v->buffer->size > BUFFER_SIZE)
+                            v->buffer->size = BUFFER_SIZE;
                         v->buffer->writing = true;
                     }
 
@@ -298,6 +300,7 @@ int vm_main_thread(struct vm* v)
 			break;
         case KVM_EXIT_INTERNAL_ERROR:
             print_vm_debug(v);
+            stop = 1;
             break;
 		default:
 			printf("Thread %d: Default - exit reason: %d\n", v->thread_id, v->run->exit_reason);

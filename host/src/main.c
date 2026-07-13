@@ -81,5 +81,10 @@ int main(int argc, char *argv[])
     }
     pthread_mutex_destroy(&buffer.mutex);
 
+    if (kvm_fd >= 0) {
+		close(kvm_fd);
+		kvm_fd = -1;
+	}
+
 	return 0;
 }

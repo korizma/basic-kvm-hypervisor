@@ -51,7 +51,6 @@ _start(void)
 	// );
 
 	init_idt();
-	test_c_prepare();
 
 	asm volatile("sti");
 
@@ -62,8 +61,9 @@ _start(void)
 
     if (interrupt_get_mode() == WRITING_MODE)
     {
+        int preparation_succeeded = test_c_prepare_writer();
         asm volatile("sti");
-        test_c_writer();
+        test_c_writer(preparation_succeeded);
     }
     else if (interrupt_get_mode() == READING_MODE)
     {
