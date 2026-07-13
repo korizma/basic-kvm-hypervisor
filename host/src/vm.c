@@ -121,10 +121,12 @@ static void setup_segments_64(struct kvm_sregs *sregs)
 		.s       = 1,           // s = 0 <=> system segment, s = 1 <=> code or data segment
 		.l       = 1,           // l = 1, long mode, l = 0 32 or 16 mode
 		.g       = 1,           // segment granuality, not really useful
+        .selector = 0x08
 	};
 	struct kvm_segment data = code;
 	data.type = 0b0011;
 	data.l    = 0;
+    data.selector = 0x10;
 
 	sregs->cs = code;
 	sregs->ds = sregs->es = sregs->fs = sregs->gs = sregs->ss = data;

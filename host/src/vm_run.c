@@ -15,7 +15,7 @@ void *vm_thread_wrapper(void *arg)
     return (void *)(intptr_t)result;
 }
 
-pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, uint64_t memory_size, uint64_t page_size, struct file_base* file_base)
+pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, uint64_t memory_size, uint64_t page_size, struct file_base* file_base, struct buffer* buffer)
 {
     struct vm* v = (struct vm*)malloc(sizeof(struct vm)); 
 	memset(v, 0, sizeof(*v));
@@ -73,6 +73,8 @@ pthread_t* create_vm_thread(int thread_id, int kvm_fd, const char* guest_file, u
 		return 0;
 	}
 
+    v->buffer = buffer;
+
     pthread_t* thread = (pthread_t*)malloc(sizeof(pthread_t));
 
     int result = pthread_create(thread, NULL, vm_thread_wrapper, v);
@@ -90,18 +92,40 @@ int vm_main_thread(struct vm* v)
 {
     int stop = 0;
     int ret;
+
     struct file_operation op;
     op.buffer_can_be_freed = false;
-
     clear_file_operation(&op);
 
+    bool is_writer = v->thread_id == 0;
+    bool is_reader = !is_writer;
+    bool mode_sent = false;
+    bool has_written_current_buffer = false;
+    bool has_read_current_buffer = false;
+
+    uint32_t curr_pos = 0;
+
+
+    bool irq_pending = true;
+    v->run->request_interrupt_window = 1;
+
     while (stop == 0) {
+
 		ret = ioctl(v->vcpu_fd, KVM_RUN, 0);
 		if (ret == -1) {
 			printf("Thread %d: KVM_RUN failed\n", v->thread_id);
 			vm_destroy(v);
 			return 1;
 		}
+
+        if ((v->buffer->size == 0 && curr_pos == 0 && is_writer && !has_written_current_buffer) ||
+            (v->buffer->size > 0 && curr_pos == 0 && !v->buffer->writing && !v->buffer->reading && is_reader && !has_read_current_buffer))
+        {
+            if (!irq_pending)
+            {
+                v->run->request_interrupt_window = 1;
+            }
+        }
 
 		switch (v->run->exit_reason) 
         {
@@ -110,9 +134,8 @@ int vm_main_thread(struct vm* v)
                 {
                     char *p = (char *)v->run;
                     // printf("Thread %d: %c\n", v->thread_id, *(p + v->run->io.data_offset));
-                    printf("%c", *(p + v->run->io.data_offset));
+                    printf("%c", *(p + v->run->io.data_offset)); 
                 }
-
                 else if (v->run->io.direction == KVM_EXIT_IO_IN && v->run->io.port == 0xE9) 
                 {
                     char c_sent = 'a' + v->thread_id;
@@ -126,28 +149,148 @@ int vm_main_thread(struct vm* v)
                     uint32_t data_recieved = *(uint32_t *)((char *)v->run + v->run->io.data_offset);
                     advance_state_file_operation(&op, data_recieved);
                 }
-
                 else if (v->run->io.direction == KVM_EXIT_IO_IN && v->run->io.port == FILE_PORT) 
                 {
                     int ret_val = execute_file_operation(v, &op);
                     *(int32_t *)((char *)v->run + v->run->io.data_offset) = ret_val;
                     clear_file_operation(&op);
                 }
+                else if (v->run->io.direction == KVM_EXIT_IO_OUT && v->run->io.port == SIZE_PORT) 
+                {
+                    pthread_mutex_lock(&v->buffer->mutex);
+                    uint32_t data_recieved = *(uint32_t *)((char *)v->run + v->run->io.data_offset);
+                    
+                    // pisac salje koliko podataka pise
+                    if (is_writer && v->buffer->size == 0 && curr_pos == 0)
+                    {
+                        irq_pending = false;
+                        v->buffer->size = data_recieved;
+                        v->buffer->writing = true;
+                    }
+
+                    bool invalid_read_num = false;
+                    // reader sends number of read data
+                    if (is_reader && v->buffer->reading)
+                    {
+                        if (data_recieved != v->buffer->size)
+                            invalid_read_num = true;
+                        
+                        v->buffer->reading = false;
+                        curr_pos = 0;
+                        has_read_current_buffer = true;
+                        v->buffer->readers_finished++;
+                        if (v->buffer->readers_finished == v->buffer->reader_num)
+                        {
+                            v->buffer->readers_finished = 0;
+                            v->buffer->size = 0;
+                        }
+                    }
+
+                    if (invalid_read_num)
+                    {
+                        printf("Thread %d: Read wrong amount of bytes from buffer, exiting...", v->thread_id);
+                        v->buffer->reader_num--;
+                        pthread_mutex_unlock(&v->buffer->mutex);
+                        return 1;
+                    }
+                    pthread_mutex_unlock(&v->buffer->mutex);
+                }
+                else if (v->run->io.direction == KVM_EXIT_IO_IN && v->run->io.port == SIZE_PORT) 
+                {
+                    pthread_mutex_lock(&v->buffer->mutex);
+                    int32_t* loc_to_send = (int32_t *)((char *)v->run + v->run->io.data_offset);
+
+                    // writing finished now sending written num of data
+                    if (is_writer && v->buffer->writing && v->buffer->size == curr_pos)
+                    {
+                        *loc_to_send = curr_pos;
+                        curr_pos = 0;
+                        v->buffer->writing = false;
+                        has_written_current_buffer = true;
+                    }
+                    
+                    // reading starting, sending number of data in buffer
+                    if (is_reader && !v->buffer->writing && !v->buffer->reading && curr_pos == 0)
+                    {
+                        irq_pending = false;
+                        v->buffer->reading = true;
+                        *loc_to_send = v->buffer->size;
+                    }
+
+                    pthread_mutex_unlock(&v->buffer->mutex);
+                }
+                else if (v->run->io.direction == KVM_EXIT_IO_OUT && v->run->io.port == DATA_PORT) 
+                {
+                    pthread_mutex_lock(&v->buffer->mutex);
+                    uint8_t data_recieved = *(uint8_t *)((char *)v->run + v->run->io.data_offset);
+
+                    // pisac je poslao velicinu sada salje podatke
+                    if (is_writer && v->buffer->writing && v->buffer->size > curr_pos)
+                    {
+                        v->buffer->buffer[curr_pos++] = data_recieved;
+                    }
+                    pthread_mutex_unlock(&v->buffer->mutex);
+                }
+                else if (v->run->io.direction == KVM_EXIT_IO_IN && v->run->io.port == DATA_PORT) 
+                {
+                    uint8_t* loc_to_send = (uint8_t *)v->run + v->run->io.data_offset;
+
+                    if (!mode_sent)
+                    {
+                        mode_sent = true;
+                        irq_pending = false;
+                        if (is_reader)
+                        {
+                            *loc_to_send = 0;
+                        }
+                        if (is_writer)
+                        {
+                            *loc_to_send = 1;
+                        }
+                        break;
+                    }
+
+                    pthread_mutex_lock(&v->buffer->mutex);
+                    
+                    // reading from buffer
+                    if (is_reader && v->buffer->reading && curr_pos < v->buffer->size)
+                    {
+                        *loc_to_send = v->buffer->buffer[curr_pos++];
+                    }
+                    pthread_mutex_unlock(&v->buffer->mutex);
+                }
 			continue;
-		// case KVM_EXIT_IRQ_WINDOW_OPEN:
-		// 	if (irq_pending > 0) {
-		// 		if (inject_irq(&v, IRQ_NUM) < 0) {
-		// 			vm_destroy(&v);
-		// 			return 1;
-		// 		}
-		// 		irq_pending--;
-		// 	} else {
-		// 		v->run->request_interrupt_window = 0;
-		// 	}
-		// 	continue;
+		case KVM_EXIT_IRQ_WINDOW_OPEN:
+            if (v->run->ready_for_interrupt_injection) 
+            {
+
+                struct kvm_interrupt irq = {
+                    .irq = 32
+                };
+
+                if (ioctl(v->vcpu_fd, KVM_INTERRUPT, &irq) < 0) {
+                    perror("KVM_INTERRUPT");
+                    break;
+                }
+
+                irq_pending = true;
+                v->run->request_interrupt_window = 0;
+            }
+            break;
+
 		case KVM_EXIT_HLT:
-			printf("Thread %d: KVM_EXIT_HLT\n", v->thread_id);
-			stop = 1;
+            if (!irq_pending)
+            {
+                bool operation_finished =
+                    (is_writer && has_written_current_buffer) ||
+                    (is_reader && has_read_current_buffer);
+
+                if (operation_finished)
+                {
+                    printf("Thread %d: KVM_EXIT_HLT\n", v->thread_id);
+			        stop = 1;
+                }
+            }
 			break;
 		case KVM_EXIT_SHUTDOWN:
 			printf("Thread %d: Shutdown\n", v->thread_id);
@@ -161,6 +304,13 @@ int vm_main_thread(struct vm* v)
 			break;
 		}
 	}
+
+    if (is_reader && !has_read_current_buffer)
+    {
+        pthread_mutex_lock(&v->buffer->mutex);
+        v->buffer->reader_num--;
+        pthread_mutex_unlock(&v->buffer->mutex);
+    }
 
     vm_destroy(v);
     free(v);

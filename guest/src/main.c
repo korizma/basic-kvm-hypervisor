@@ -1,7 +1,7 @@
 #include "descriptors.h"
 #include "interrupts.h"
 #include "io.h"
-#include "test_b.h"
+#include "test_c.h"
 
 static struct gdt_entry gdt[3];
 
@@ -10,27 +10,26 @@ __attribute__((noreturn))
 __attribute__((section(".start")))
 _start(void)
 {
-    test2_b();
 
     
 	
-    // struct dt_ptr p;
+    struct dt_ptr p;
 
-	// gdt[0] = (struct gdt_entry){ 0 };
-	// gdt[1] = (struct gdt_entry){  /* 64-bit code, selector 0x08: P=1, DPL=0, S=1, type=0xA, L=1, G=1 */
-	// 	.limit_low   = 0xFFFF,
-	// 	.access      = 0x9A,
-	// 	.flags_limit = 0xAF,
-	// };
-	// gdt[2] = (struct gdt_entry){  /* 64-bit data, selector 0x10: P=1, DPL=0, S=1, type=0x2, D/B=1, G=1 */
-	// 	.limit_low   = 0xFFFF,
-	// 	.access      = 0x92,
-	// 	.flags_limit = 0xCF,
-	// };
+	gdt[0] = (struct gdt_entry){ 0 };
+	gdt[1] = (struct gdt_entry){  /* 64-bit code, selector 0x08: P=1, DPL=0, S=1, type=0xA, L=1, G=1 */
+		.limit_low   = 0xFFFF,
+		.access      = 0x9A,
+		.flags_limit = 0xAF,
+	};
+	gdt[2] = (struct gdt_entry){  /* 64-bit data, selector 0x10: P=1, DPL=0, S=1, type=0x2, D/B=1, G=1 */
+		.limit_low   = 0xFFFF,
+		.access      = 0x92,
+		.flags_limit = 0xCF,
+	};
 
-	// p.limit = sizeof(gdt) - 1;
-	// p.base  = (uint64_t)(uintptr_t)gdt;
-	// asm volatile("lgdt %0" : : "m"(p) : "memory");
+	p.limit = sizeof(gdt) - 1;
+	p.base  = (uint64_t)(uintptr_t)gdt;
+	asm volatile("lgdt %0" : : "m"(p) : "memory");
 
 	// /* Reload CS to 0x08 and continue at label 1 */
 	// asm volatile(
@@ -51,14 +50,27 @@ _start(void)
 	// 	::: "eax", "memory"
 	// );
 
-	// init_idt();
+	init_idt();
+	test_c_prepare();
 
-	// asm volatile("sti");
+	asm volatile("sti");
 
-	// const char *s;
-	// for (s = "Hello, world!\n"; *s; ++s)
-	// 	outb(0xE9, *s);
+    while (interrupt_get_mode() == -1)
+		asm volatile("hlt");
 
-	// for (;;)
-	// 	asm volatile("hlt");
+    asm volatile("cli");
+
+    if (interrupt_get_mode() == WRITING_MODE)
+    {
+        asm volatile("sti");
+        test_c_writer();
+    }
+    else if (interrupt_get_mode() == READING_MODE)
+    {
+        asm volatile("sti");
+        test_c_reader();
+    }
+
+	for (;;)
+		asm volatile("hlt");
 }

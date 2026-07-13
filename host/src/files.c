@@ -327,12 +327,15 @@ int write_file(struct file_base* file_base, int fd, const char* buffer, size_t s
     if (!file_base->files[fd]->write_permision)
         return -1;
 
-    char* temp = (char*)realloc(file_base->files[fd]->content, sizeof(char) * (file_base->files[fd]->content_size + size));
-    if (temp == NULL)
-        return -1;
+    if (file_base->files[fd]->cursor + size > file_base->files[fd]->content_size)
+    {
+        char* temp = (char*)realloc(file_base->files[fd]->content, sizeof(char) * (file_base->files[fd]->content_size + size));
+        if (temp == NULL)
+            return -1;
 
-    file_base->files[fd]->content = temp;
-    file_base->files[fd]->content_size += size;
+        file_base->files[fd]->content = temp;
+        file_base->files[fd]->content_size += size;
+    }
 
     for (int i = 0; i < size; i++)
     {

@@ -55,11 +55,22 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    struct buffer buffer;
+    buffer.reader_num = args.guest_num-1;
+    if (pthread_mutex_init(&buffer.mutex, NULL) != 0)
+    {
+        perror("mutex init");
+        return 1;
+    }
+    buffer.reading = buffer.writing = false;
+    buffer.size = 0;
+    buffer.readers_finished = 0;
+
     pthread_t** threads = (pthread_t**)malloc(sizeof(pthread_t*) * args.guest_num);
 
     for (int i = 0; i < args.guest_num; i++)
     {
-        threads[i] = create_vm_thread(i, kvm_fd, args.guests[i], args.memory_size, args.page_size, &file_base);
+        threads[i] = create_vm_thread(i, kvm_fd, args.guests[i], args.memory_size, args.page_size, &file_base, &buffer);
     }
 
     for (int i = 0; i < args.guest_num; i++)
@@ -68,6 +79,7 @@ int main(int argc, char *argv[])
             continue;
         pthread_join(*threads[i], NULL);
     }
+    pthread_mutex_destroy(&buffer.mutex);
 
 	return 0;
 }

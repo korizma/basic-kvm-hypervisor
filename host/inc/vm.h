@@ -6,7 +6,7 @@
 #include <linux/kvm.h>
 #include "files.h"
 #include <pthread.h>
-
+#include "buffer.h"
 
 #define GUEST_START_ADDR 0x8000
 
@@ -44,6 +44,8 @@ struct vm {
 	int run_mmap_size;
 
     struct file_base file_base;
+
+    struct buffer *buffer;
 
     int thread_id;
 };
