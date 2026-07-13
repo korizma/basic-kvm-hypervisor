@@ -64,6 +64,8 @@ struct file_operation
     bool buffer_can_be_freed;
 };
 
+void print_file_base_content(const struct file_base* file_base);
+
 int open_initial_files(char** files, uint16_t file_num, struct file_base* file_base);
 
 void create_file_base_using_initial_base(struct file_base *new_file_base, struct file_base* base);

@@ -7,6 +7,27 @@
 #include "vm.h"
 
 
+void print_file_base_content(const struct file_base* file_base)
+{
+    if (file_base == NULL)
+        return;
+
+    for (uint16_t i = 0; i < file_base->file_num; i++)
+    {
+        const struct file_content* file = file_base->files[i];
+
+        if (file == NULL)
+            continue;
+
+        printf("File: %s\n", file->path != NULL ? file->path : "(null)");
+
+        if (file->content != NULL && file->content_size > 0)
+            fwrite(file->content, sizeof(char), (size_t)file->content_size, stdout);
+
+        putchar('\n');
+    }
+}
+
 void advance_state_file_operation(struct file_operation* op, uint32_t next)
 {
     switch(op->read_state)

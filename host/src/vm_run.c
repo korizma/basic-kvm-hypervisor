@@ -315,6 +315,8 @@ int vm_main_thread(struct vm* v)
         pthread_mutex_unlock(&v->buffer->mutex);
     }
 
+    printf("\nThread %d file contents:\n", v->thread_id);
+    print_file_base_content(&v->file_base);
     vm_destroy(v);
     free(v);
     return 0;
